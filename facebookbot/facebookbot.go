@@ -1,0 +1,133 @@
+package facebookbot
+
+import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"strings"
+)
+
+type Client struct {
+	pageAccessToken string
+}
+
+type User struct {
+	ID string `json:"id"`
+}
+
+type Message struct {
+	Mid        string `json:"mid"`
+	Seq        int    `json:"seq"`
+	Text       string `json:"text,omitempty"`
+	QuickReply struct {
+		Payload string `json:"payload"`
+	} `json:"quick_reply,omitempty"`
+	StickerID   string `json:"sticker_id,omitempty"`
+	Attachments struct {
+		Payload string `json:"payload"`
+	} `json:"attachments,omitempty"`
+}
+
+type Postback struct {
+	Payload string `json:"payload"`
+}
+
+type Messaging struct {
+	Sender    *User     `json:"sender"`
+	Recipient *User     `json:"recipient"`
+	Timestamp int64     `json:"timestamp"`
+	Message   *Message  `json:"message,omitempty"`
+	Postback  *Postback `json:"postback,omitempty"`
+}
+
+type Entry struct {
+	ID         string       `json:"id"`
+	Time       int64        `json:"time"`
+	Messagings []*Messaging `json:"messaging"`
+}
+
+type Event struct {
+	Object  string   `json:"object"`
+	Entries []*Entry `json:"entry"`
+}
+
+type PushPayload struct {
+	Recipient *User  `json:"recipient"`
+	Message   string `json:"message"`
+}
+
+func New(pageAccessToken string) *Client {
+	return &Client{
+		pageAccessToken: pageAccessToken,
+	}
+}
+
+func (c *Client) ParseRequest(r *http.Request) (*Event, error) {
+	defer r.Body.Close()
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if !validateSignature(c.pageAccessToken, r.Header.Get("X-Hub-Signature"), body) {
+		return nil, errors.New("invalid signature")
+	}
+
+	event := &Event{}
+	if err = json.Unmarshal(body, event); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
+func validateSignature(channelSecret, signature string, body []byte) bool {
+	const signaturePrefix = "sha1="
+
+	if !strings.HasPrefix(signature, signaturePrefix) {
+		return false
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(signature[len(signaturePrefix):])
+	if err != nil {
+		return false
+	}
+
+	hash := hmac.New(sha1.New, []byte(channelSecret))
+	hash.Write(body)
+	return hmac.Equal(decoded, hash.Sum(nil))
+}
+
+func (c *Client) PushMessage(psid string, text string) error {
+	payload := &PushPayload{
+		Recipient: &User{
+			ID: psid,
+		},
+		Message: text,
+	}
+
+	reqBytes, _ := json.Marshal(payload)
+
+	reqBody := bytes.NewBufferString(string(reqBytes))
+
+	client := &http.Client{}
+	req, _ := http.NewRequest("POST", fmt.Sprintf("https://graph.facebook.com/v2.6/me/messages?access_token=%s", c.pageAccessToken), reqBody)
+	req.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(req)
+
+	if err != nil {
+		return err
+	}
+
+	defer response.Body.Close()
+	if _, err := ioutil.ReadAll(response.Body); err != nil {
+		return err
+	}
+
+	return nil
+}
