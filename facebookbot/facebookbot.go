@@ -70,6 +70,7 @@ func New(appSecret string, pageAccessToken string) *Client {
 	}
 }
 
+// ParseRequest parse request and return the result. If appSecret is empty, it will skip validating signature.
 func (c *Client) ParseRequest(r *http.Request) (*Event, error) {
 	defer r.Body.Close()
 	body, err := ioutil.ReadAll(r.Body)
@@ -77,11 +78,13 @@ func (c *Client) ParseRequest(r *http.Request) (*Event, error) {
 		return nil, err
 	}
 
-	if !validateSignature(c.appSecret, r.Header.Get("X-Hub-Signature"), body) {
-		fmt.Println(r.Header.Get("X-Hub-Signature"))
-		fmt.Println(string(body))
+	if c.appSecret != "" {
+		if !validateSignature(c.appSecret, r.Header.Get("X-Hub-Signature"), body) {
+			fmt.Println(r.Header.Get("X-Hub-Signature"))
+			fmt.Println(string(body))
 
-		return nil, errors.New("invalid signature")
+			return nil, errors.New("invalid signature")
+		}
 	}
 
 	event := &Event{}
@@ -109,6 +112,10 @@ func validateSignature(appSecret, signature string, body []byte) bool {
 }
 
 func (c *Client) PushMessage(psid string, text string) error {
+	if c.pageAccessToken == "" {
+		return errors.New("pageAccessToken variable is empty.")
+	}
+
 	payload := &PushPayload{
 		Recipient: &User{
 			ID: psid,
