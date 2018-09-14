@@ -14,6 +14,7 @@ import (
 )
 
 type Client struct {
+	appSecret       string
 	pageAccessToken string
 }
 
@@ -62,8 +63,9 @@ type PushPayload struct {
 	Message   string `json:"message"`
 }
 
-func New(pageAccessToken string) *Client {
+func New(appSecret string, pageAccessToken string) *Client {
 	return &Client{
+		appSecret:       appSecret,
 		pageAccessToken: pageAccessToken,
 	}
 }
@@ -75,7 +77,10 @@ func (c *Client) ParseRequest(r *http.Request) (*Event, error) {
 		return nil, err
 	}
 
-	if !validateSignature(c.pageAccessToken, r.Header.Get("X-Hub-Signature"), body) {
+	if !validateSignature(c.appSecret, r.Header.Get("X-Hub-Signature"), body) {
+		fmt.Println(r.Header.Get("X-Hub-Signature"))
+		fmt.Println(string(body))
+
 		return nil, errors.New("invalid signature")
 	}
 
@@ -86,7 +91,7 @@ func (c *Client) ParseRequest(r *http.Request) (*Event, error) {
 	return event, nil
 }
 
-func validateSignature(channelSecret, signature string, body []byte) bool {
+func validateSignature(appSecret, signature string, body []byte) bool {
 	const signaturePrefix = "sha1="
 
 	if !strings.HasPrefix(signature, signaturePrefix) {
@@ -98,7 +103,7 @@ func validateSignature(channelSecret, signature string, body []byte) bool {
 		return false
 	}
 
-	hash := hmac.New(sha1.New, []byte(channelSecret))
+	hash := hmac.New(sha1.New, []byte(appSecret))
 	hash.Write(body)
 	return hmac.Equal(decoded, hash.Sum(nil))
 }
