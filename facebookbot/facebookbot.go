@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha1"
-	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -101,14 +101,12 @@ func validateSignature(appSecret, signature string, body []byte) bool {
 		return false
 	}
 
-	decoded, err := base64.StdEncoding.DecodeString(signature[len(signaturePrefix):])
-	if err != nil {
-		return false
-	}
+	xhub := signature[len(signaturePrefix):]
 
 	hash := hmac.New(sha1.New, []byte(appSecret))
 	hash.Write(body)
-	return hmac.Equal(decoded, hash.Sum(nil))
+	expected := hex.EncodeToString(hash.Sum(nil))
+	return xhub == expected
 }
 
 func (c *Client) PushMessage(psid string, text string) error {
