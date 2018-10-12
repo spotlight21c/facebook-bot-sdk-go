@@ -135,6 +135,11 @@ func (c *Client) PushMessage(psid string, text string) error {
 	}
 
 	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("http status error %d", response.StatusCode)
+	}
+
 	if _, err := ioutil.ReadAll(response.Body); err != nil {
 		return err
 	}
